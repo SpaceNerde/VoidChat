@@ -1,19 +1,26 @@
 use std::net::{TcpListener, TcpStream};
-use std::io::{Result, Write};
+use std::io::{Result, Write, BufReader, BufRead};
 use std::thread;
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::str;
 
 struct Message;
 
 fn server_handler(_recevier: Receiver<Message>) -> Result<()> {
-    todo!();
+    unimplemented!();
 }
 
 fn connection_handler(mut stream: TcpStream, _sender: Sender<Message>) -> Result<()> {
     writeln!(stream, "Welcome to the server!").map_err(|e|
         eprintln!("S_ ERROR: {}", e)
-    );
-    Ok(())
+    ); 
+
+    loop {
+        let mut reader = BufReader::new(&stream);
+        for data in reader.lines() {
+            println!("{}", data.unwrap());
+        } 
+    }
 }
 
 fn main() -> Result<()> {
