@@ -13,6 +13,7 @@ struct Group {
     clients: Vec<TcpStream>,
 }
 
+
 impl Clone for Group {
     fn clone(&self) -> Self {
         let cloned_clients: Vec<TcpStream> = self.clients.iter()
@@ -29,6 +30,7 @@ impl Clone for Group {
     }
 }
 
+
 impl Group {
     fn new(name: String) -> Self {
         Group {
@@ -37,7 +39,7 @@ impl Group {
         }
     }
 
-    fn add_client(&mut self, mut client: TcpStream) {
+    fn add_client(&mut self, client: TcpStream) {
         self.clients.push(client);
     }
     
@@ -59,8 +61,8 @@ fn server_handler(recevier: Receiver<Message>, groups: Arc<Mutex<Vec<Group>>>) -
     loop {
         let groups = groups.lock().unwrap(); 
         
-        for client in groups[0].clients.into_iter() {
-            writeln!(&client, "{:?}", recevier.recv());
+        for mut client in &groups[0].clients {
+            writeln!(&mut client, "{:?}", recevier.recv());
         }
     }
     Ok(())
@@ -71,11 +73,12 @@ fn connection_handler(mut stream: TcpStream, sender: Sender<Message>, groups: Ar
         eprintln!("S_ ERROR: {}", e)
     ); 
 
-    let groups = groups.lock().unwrap();
-    groups[0].add_client(stream);
+    let mut groups = groups.lock().unwrap();
+    groups[0].add_client(stream.try_clone()?);
 
     loop {
-        let mut reader = BufReader::new(&stream);
+        let mut reader = BufReader::new(&mut stream);
+
         for data in reader.lines() {
             sender.send(Message {
                 message: data.unwrap().to_string(),
@@ -102,7 +105,42 @@ fn main() -> Result<()> {
     thread::spawn(move || {
         server_handler(receiver, groups.clone());
     });
+fn main() -> Result<()> {
+    let addr = "0.0.0.0:8888";
+    let listener = TcpListener::bind(addr)?;
 
+    println!("S_ INFO: Bind listener to: {}", addr);
+
+    let mut groups = Arc::new(Mutex::new(vec![]));
+
+    let mut test_group = Group::new("test".to_string());
+
+    groups.lock().unwrap().push(test_group);
+
+    let (sender, receiver) = channel();
+    thread::spawn(move || {
+        server_handler(receiver, groups.clone());
+    });
+
+    // handles incoming connection trys by unknown clients
+    for stream in listener.incoming() {
+        match stream {
+            Ok(mut stream) => {
+                println!("S_ INFO: {} connected", stream.peer_addr()?);
+                let sender = sender.clone();
+                let groups = groups.clone();
+                thread::spawn(move || {
+                    connection_handler(stream, sender, groups);
+                });
+            },
+            Err(e) => {
+                eprintln!("S_ ERROR: {}", e);
+            }
+        }
+    }
+
+    Ok(())
+}
     // handles incoming connection trys by unknown clients
     for stream in listener.incoming() {
         match stream {
